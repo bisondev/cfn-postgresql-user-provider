@@ -41,6 +41,11 @@ request_schema = {
             "default": True,
             "description": "create a database with the same name, or only a user"
         },
+        "WithCreateDb": {
+            "type": "boolean",
+            "default": False,
+            "description": "grant createdb permission to the user"
+        },
         "DeletionPolicy": {
             "type": "string",
             "default": "Retain",
@@ -164,6 +169,10 @@ class PostgreSQLUser(ResourceProvider):
         return self.get('Database', {}).get('User', None)
 
     @property
+    def with_createdb(self):
+        return self.get('WithCreateDb', False)
+
+    @property
     def with_database(self):
         return self.get('WithDatabase', False)
 
@@ -247,6 +256,9 @@ class PostgreSQLUser(ResourceProvider):
         with self.connection.cursor() as cursor:
             cursor.execute('CREATE ROLE %s LOGIN ENCRYPTED PASSWORD %s', [
                 AsIs(self.user), self.user_password])
+            if self.with_createdb:
+                cursor.execute('ALTER ROLE %s CREATEDB', [
+                    AsIs(self.user)])
 
     def create_database(self):
         log.info('create database %s', self.user)
