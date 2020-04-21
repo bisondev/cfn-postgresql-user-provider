@@ -12,9 +12,7 @@ request_schema = {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "type": "object",
     "oneOf": [
-        {"required": ["Database", "User", "Password"]},
-        {"required": ["Database", "User", "PasswordParameterName"]},
-        {"required": ["Database", "User", "PasswordSecretName"]}
+        {"required": ["Database", "User"]},
     ],
     "properties": {
         "Database": {"$ref": "#/definitions/connection"},
@@ -135,8 +133,10 @@ class PostgreSQLUser(ResourceProvider):
             return props['Password']
         elif 'PasswordParameterName' in props:
             return self.get_param_password(props['PasswordParameterName'])
-        else:
+        elif 'PasswordSecretName' in props:
             return self.get_secrets_password(props['PasswordSecretName'])
+
+        return None
 
     @property
     def user_password(self):
@@ -254,11 +254,12 @@ class PostgreSQLUser(ResourceProvider):
     def create_role(self):
         log.info('create role %s ', self.user)
         with self.connection.cursor() as cursor:
-            cursor.execute('CREATE ROLE %s LOGIN ENCRYPTED PASSWORD %s', [
-                AsIs(self.user), self.user_password])
+            cursor.execute('CREATE ROLE %s LOGIN', [AsIs(self.user)])
+            if self.user_password:
+                cursor.execute("ALTER ROLE %s LOGIN ENCRYPTED PASSWORD %s", [
+                    AsIs(self.user), self.user_password])
             if self.with_createdb:
-                cursor.execute('ALTER ROLE %s CREATEDB', [
-                    AsIs(self.user)])
+                cursor.execute('ALTER ROLE %s CREATEDB', [AsIs(self.user)])
 
     def create_database(self):
         log.info('create database %s', self.user)
