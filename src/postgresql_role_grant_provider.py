@@ -27,15 +27,8 @@ request_schema = {
             "type": "object",
             "oneOf": [
                 {"required": ["DBName", "Host", "Port", "User", "Password"]},
-                {
-                    "required": [
-                        "DBName",
-                        "Host",
-                        "Port",
-                        "User",
-                        "PasswordParameterName",
-                    ]
-                },
+                {"required": ["DBName", "Host", "Port", "User", "PasswordParameterName"]},
+                {"required": ["DBName", "Host", "Port", "User", "PasswordSecretName"]}
             ],
             "properties": {
                 "DBName": {"type": "string", "description": "the name of the database"},
@@ -57,6 +50,10 @@ request_schema = {
                     "type": "string",
                     "description": "the name of the database owner password in the Parameter Store.",
                 },
+                "PasswordSecretName": {
+                    "type": "string",
+                    "description": "the name of the secret storing the database owner password"
+                }
             },
         }
     },

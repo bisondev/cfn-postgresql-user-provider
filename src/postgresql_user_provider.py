@@ -1,6 +1,7 @@
 import boto3
 import logging
 import psycopg2
+import json
 from botocore.exceptions import ClientError
 from psycopg2.extensions import AsIs
 from cfn_resource_provider import ResourceProvider
@@ -12,7 +13,8 @@ request_schema = {
     "type": "object",
     "oneOf": [
         {"required": ["Database", "User", "Password"]},
-        {"required": ["Database", "User", "PasswordParameterName"]}
+        {"required": ["Database", "User", "PasswordParameterName"]},
+        {"required": ["Database", "User", "PasswordSecretName"]}
     ],
     "properties": {
         "Database": {"$ref": "#/definitions/connection"},
@@ -30,6 +32,10 @@ request_schema = {
             "minLength": 1,
             "description": "the name of the password in the Parameter Store."
         },
+        "PasswordSecretName": {
+            "type": "string",
+            "description": "the name of the secret storing the password"
+        },
         "WithDatabase": {
             "type": "boolean",
             "default": True,
@@ -46,7 +52,8 @@ request_schema = {
             "type": "object",
             "oneOf": [
                 {"required": ["DBName", "Host", "Port", "User", "Password"]},
-                {"required": ["DBName", "Host", "Port", "User", "PasswordParameterName"]}
+                {"required": ["DBName", "Host", "Port", "User", "PasswordParameterName"]},
+                {"required": ["DBName", "Host", "Port", "User", "PasswordSecretName"]}
             ],
             "properties": {
                 "DBName": {
@@ -73,6 +80,10 @@ request_schema = {
                 "PasswordParameterName": {
                     "type": "string",
                     "description": "the name of the database owner password in the Parameter Store."
+                },
+                "PasswordSecretName": {
+                    "type": "string",
+                    "description": "the name of the secret storing the database owner password"
                 }
             }
         }
@@ -85,33 +96,52 @@ class PostgreSQLUser(ResourceProvider):
     def __init__(self):
         super(PostgreSQLUser, self).__init__()
         self.ssm = boto3.client('ssm')
+        self.secrets = boto3.client('secretsmanager')
         self.connection = None
         self.request_schema = request_schema
 
     def convert_property_types(self):
         self.heuristic_convert_property_types(self.properties)
 
-    def get_password(self, name):
+    def get_param_password(self, name):
         try:
             response = self.ssm.get_parameter(Name=name, WithDecryption=True)
             return response['Parameter']['Value']
         except ClientError as e:
             raise ValueError('Could not obtain password using name {}, {}'.format(name, e))
 
+    def get_secrets_password(self, name):
+        data = json.loads(self._get_secret(name))
+
+        return data['password']
+
+    def _get_secret(self, name):
+        try:
+            response = self.secrets.get_secret_value(SecretId=name)
+            if 'SecretString' in response:
+                return response['SecretString']
+
+            return response['SecretBinary']
+        except ClientError as e:
+            raise ValueError('Could not obtain password using name {}, {}'.format(name, e))
+
+    def extract_password(self, props):
+        if 'Password' in props:
+            return props['Password']
+        elif 'PasswordParameterName' in props:
+            return self.get_param_password(props['PasswordParameterName'])
+        else:
+            return self.get_secrets_password(props['PasswordSecretName'])
+
     @property
     def user_password(self):
-        if 'Password' in self.properties:
-            return self.get('Password')
-        else:
-            return self.get_password(self.get('PasswordParameterName'))
+        return self.extract_password(self.properties)
 
     @property
     def dbowner_password(self):
         db = self.get('Database')
-        if 'Password' in db:
-            return db.get('Password')
-        else:
-            return self.get_password(db['PasswordParameterName'])
+
+        return self.extract_password(db)
 
     @property
     def user(self):
