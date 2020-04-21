@@ -34,6 +34,11 @@ request_schema = {
             "type": "string",
             "description": "the name of the secret storing the password"
         },
+        "WithLogin": {
+            "type": "boolean",
+            "default": True,
+            "description": "allow the user to login"
+        },
         "WithDatabase": {
             "type": "boolean",
             "default": True,
@@ -177,6 +182,10 @@ class PostgreSQLUser(ResourceProvider):
         return self.get('WithDatabase', False)
 
     @property
+    def with_login(self):
+        return self.get('WithLogin', False)
+
+    @property
     def deletion_policy(self):
         return self.get('DeletionPolicy')
 
@@ -248,16 +257,27 @@ class PostgreSQLUser(ResourceProvider):
     def update_password(self):
         log.info('update password of role %s', self.user)
         with self.connection.cursor() as cursor:
-            cursor.execute("ALTER ROLE %s LOGIN ENCRYPTED PASSWORD %s", [
-                AsIs(self.user), self.user_password])
+            if self.with_login and self.user_password:
+                cursor.execute("ALTER ROLE %s LOGIN ENCRYPTED PASSWORD %s", [
+                    AsIs(self.user), self.user_password])
+            elif self.with_login:
+                cursor.execute("ALTER ROLE %s LOGIN", [AsIs(self.user)])
+            else:
+                cursor.execute("ALTER ROLE %s NOLOGIN", [AsIs(self.user)])
 
     def create_role(self):
         log.info('create role %s ', self.user)
         with self.connection.cursor() as cursor:
-            cursor.execute('CREATE ROLE %s LOGIN', [AsIs(self.user)])
-            if self.user_password:
+            cursor.execute('CREATE ROLE %s', [AsIs(self.user)])
+
+            if self.with_login and self.user_password:
                 cursor.execute("ALTER ROLE %s LOGIN ENCRYPTED PASSWORD %s", [
                     AsIs(self.user), self.user_password])
+            elif self.with_login:
+                cursor.execute("ALTER ROLE %s LOGIN", [AsIs(self.user)])
+            else:
+                cursor.execute("ALTER ROLE %s NOLOGIN", [AsIs(self.user)])
+
             if self.with_createdb:
                 cursor.execute('ALTER ROLE %s CREATEDB', [AsIs(self.user)])
 
